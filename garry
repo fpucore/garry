@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+#
+# ==========================================================
+#
+#   ██████╗  █████╗ ██████╗ ██████╗ ██╗   ██╗
+#  ██╔════╝ ██╔══██╗██╔══██╗██╔══██╗╚██╗ ██╔╝
+#  ██║  ███╗███████║██████╔╝██████╔╝ ╚████╔╝
+#  ██║   ██║██╔══██║██╔══██╗██╔══██╗  ╚██╔╝
+#  ╚██████╔╝██║  ██║██║  ██║██║  ██║   ██║
+#   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   for ☁ AirVPN
+#
+# ==========================================================
+#
+# Garry - For AirVPN connectivity
+# Version 1.5
+#
+# Usage:
+#   ./garry <server>              Connect in background, then egress-check + log
+#   ./garry <server> --foreground Connect in foreground (no PID tracking)
+#   ./garry --status              Show status of last background Eddie PID
+#   ./garry --disconnect          Disconnect last background Eddie PID
+#
+# ---------------------------------------------------------
+# EDIT THE CONSTANTS BELOW TO MATCH YOUR SETUP
+# ---------------------------------------------------------
+EDDIE_CLI="/usr/bin/eddie-cli"
+DNS_SERVERS="127.0.0.1"
+LOGIN="USERNAME"
+PASSWORD="PASSWORD"
+WAIT_SECONDS=45
+LOG_FILE="${HOME}/.garry-airvpn-egress.log"
+PID_FILE="${HOME}/.garry-eddie.pid"
+# ---------------------------------------------------------
+
+set -u
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+geo_lookup() {
+    local ip="$1"
+    if [[ -z "$ip" ]]; then
+        echo "Geo: (no IP)"
+        return 0
+    fi
+    if have geoiplookup; then
+        geoiplookup "$ip" 2>/dev/null || echo "Geo: geoiplookup failed"
+    else
+        echo "Geo: (no geoiplookup installed)"
+    fi
+}
+
+get_ipv4() { curl -4 -fsS --max-time 10 https://icanhazip.com 2>/dev/null | tr -d '[:space:]'; }
+get_ipv6() { curl -6 -fsS --max-time 10 https://icanhazip.com 2>/dev/null | tr -d '[:space:]'; }
+
+read_pid() {
+    [[ -f "$PID_FILE" ]] || return 1
+    local pid
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    [[ -n "$pid" ]] || return 1
+    printf '%s' "$pid"
+}
+
+is_running() {
+    local pid="$1"
+    kill -0 "$pid" >/dev/null 2>&1
+}
+
+do_status() {
+    local pid
+    if ! pid="$(read_pid)"; then
+        echo "Status: no stored PID ($PID_FILE)."
+        return 1
+    fi
+    if is_running "$pid"; then
+        echo "Status: eddie-cli appears running (PID $pid)."
+        return 0
+    fi
+    echo "Status: stored PID $pid is not running (stale PID file)."
+    return 1
+}
+
+do_disconnect() {
+    local pid
+    if ! pid="$(read_pid)"; then
+        echo "Disconnect: no stored PID ($PID_FILE). Nothing to do."
+        return 1
+    fi
+
+    if ! is_running "$pid"; then
+        echo "Disconnect: stored PID $pid is not running. Cleaning PID file."
+        rm -f "$PID_FILE"
+        return 1
+    fi
+
+    # Try graceful, then hard.
+    sudo -n kill "$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
+    sleep 1
+
+    if is_running "$pid"; then
+        sudo -n kill -9 "$pid" >/dev/null 2>&1 || kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+
+    rm -f "$PID_FILE"
+    echo "Disconnected (stopped eddie-cli PID $pid)."
+    return 0
+}
+
+usage() {
+    cat <<EOF
+Usage:
+  $0 <server>              Connect in background, then egress-check + log
+  $0 <server> --foreground Connect in foreground (no PID tracking)
+  $0 --status              Show status of last background Eddie PID
+  $0 --disconnect          Disconnect last background Eddie PID
+EOF
+}
+
+# ---- parse flags -----------------------------------------
+foreground=false
+mode="connect"
+server=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --foreground) foreground=true ;;
+        --status) mode="status" ;;
+        --disconnect) mode="disconnect" ;;
+    esac
+done
+
+# ---- handle status/disconnect -----------------------------
+case "$mode" in
+    status)
+        do_status
+        exit $?
+        ;;
+    disconnect)
+        do_disconnect
+        exit $?
+        ;;
+esac
+
+# ---- connect mode needs a server --------------------------
+if [[ $# -ge 1 ]]; then
+    # first non-flag argument becomes server
+    for arg in "$@"; do
+        case "$arg" in
+            --foreground|--status|--disconnect) ;;
+            *)
+                server="$arg"
+                break
+                ;;
+        esac
+    done
+fi
+
+if [[ -z "$server" ]]; then
+    read -r -p "Enter the server name (e.g. Alnitak): " server
+    if [[ -z "$server" ]]; then
+        echo "Error: server name cannot be empty." >&2
+        usage >&2
+        exit 1
+    fi
+fi
+
+# ---- foreground mode --------------------------------------
+if $foreground; then
+    echo "Launching AirVPN in foreground mode (Ctrl+C to stop)..."
+    exec sudo "$EDDIE_CLI" \
+        --batch \
+        --dns.servers="$DNS_SERVERS" \
+        --login="$LOGIN" \
+        --password="$PASSWORD" \
+        --connect \
+        --server="$server"
+fi
+
+# ---- background connect -----------------------------------
+# Prevent stacking multiple background sessions
+if do_status >/dev/null 2>&1; then
+    echo "An eddie-cli session already appears to be running. Use --disconnect first."
+    exit 1
+fi
+
+sudo "$EDDIE_CLI" \
+    --batch \
+    --dns.servers="$DNS_SERVERS" \
+    --login="$LOGIN" \
+    --password="$PASSWORD" \
+    --connect \
+    --server="$server" \
+    >/dev/null 2>&1 &
+
+EDDIE_PID=$!
+printf '%s\n' "$EDDIE_PID" > "$PID_FILE"
+
+sleep 1
+if ! is_running "$EDDIE_PID"; then
+    echo "Connection failed: eddie-cli did not stay running." >&2
+    rm -f "$PID_FILE"
+    exit 1
+fi
+
+: > "$LOG_FILE"          # <-- wipe previous session log
+
+sleep "$WAIT_SECONDS"
+
+ts="$(date -Is 2>/dev/null || date)"
+ip4="$(get_ipv4 || true)"
+ip6="$(get_ipv6 || true)"
+
+{
+    echo "=========================================================="
+    echo "Garry Egress Check  |  $ts"
+    echo "Server: $server"
+    echo "Eddie PID: $EDDIE_PID"
+    echo "Wait: ${WAIT_SECONDS}s"
+    echo
+    echo "IPv4: ${ip4:-"(unavailable)"}"
+    echo "$(geo_lookup "$ip4")"
+    echo
+    echo "IPv6: ${ip6:-"(unavailable)"}"
+    echo "=========================================================="
+    echo
+} >> "$LOG_FILE"
+
+cat "$LOG_FILE"
+echo
+echo "Commands:  $0 --status   |   $0 --disconnect"
