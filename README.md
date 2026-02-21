@@ -1,5 +1,5 @@
 # Garry ☁  
-### Deterministic AirVPN wrapper for eddie-cli`
+### Deterministic AirVPN wrapper for eddie-cli
 
 ```
 ==========================================================
