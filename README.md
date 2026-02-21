@@ -16,9 +16,11 @@
 
 If you use AirVPN then you'll undoubtedly know Eddie.
 
-Well I don't like Eddie, so meet Garry.
+Well I don't like Eddie.
 
-In fact, Eddie stinks!
+In fact, Eddie stinks! ... So meet Garry.
+
+
 
 ---
 
