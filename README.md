@@ -1,7 +1,8 @@
 # Garry ☁  
-### AirVPN Control Wrapper for `eddie-cli`
+### Deterministic AirVPN wrapper for eddie-cli`
 
 ```
+==========================================================
 
    ██████╗  █████╗ ██████╗ ██████╗ ██╗   ██╗
    ██╔════╝ ██╔══██╗██╔══██╗██╔══██╗╚██╗ ██╔╝
@@ -10,11 +11,16 @@
    ╚██████╔╝██║  ██║██║  ██║██║  ██║   ██║
     ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   for ☁ AirVPN
 
+==========================================================
 ```
 
 If you use AirVPN then you'll undoubtedly know Eddie.
+
 Well I don't like Eddie, so meet Garry.
+
 In fact, Eddie stinks!
+
+---
 
 Garry is a deterministic wrapper around `eddie-cli` designed to:
 
