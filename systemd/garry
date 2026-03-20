@@ -12,7 +12,7 @@
 # ==========================================================
 #
 # Garry - For AirVPN connectivity
-# Version 1.5
+# Version 2.0, for systemd (Linux)
 #
 # Usage:
 #   ./garry <server>              Connect in background, then egress-check + log
@@ -102,6 +102,21 @@ do_disconnect() {
 
     rm -f "$PID_FILE"
     echo "Disconnected (stopped eddie-cli PID $pid)."
+    
+    # ---- post-disconnect network cleanup ----
+    echo "Cleaning up network..."
+
+    echo "  Removing Eddie tunnel interface..."
+    sudo ip link delete Eddie 2>/dev/null \
+        && echo "  Done." \
+        || echo "  (Eddie interface not found or already removed)"
+
+    echo "  Restarting NetworkManager..."
+    sudo systemctl restart NetworkManager 2>/dev/null \
+        && echo "  Done." \
+        || echo "  (Failed to restart network-manager)"
+
+    echo "Network cleanup complete."
     return 0
 }
 
@@ -227,3 +242,4 @@ ip6="$(get_ipv6 || true)"
 cat "$LOG_FILE"
 echo
 echo "Commands:  $0 --status   |   $0 --disconnect"
+
